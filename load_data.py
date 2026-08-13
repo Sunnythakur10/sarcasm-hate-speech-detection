@@ -1,9 +1,7 @@
 """
 Loads and does light structural cleanup on the two raw datasets.
-
 No labeling/annotation here — both datasets already come pre-labeled.
 """
-
 import json
 import os
 
@@ -14,144 +12,141 @@ DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 
 def load_hate_speech_df() -> pd.DataFrame:
     """
-    Davidson et al. dataset.
-
-    Expected columns in raw CSV:
-      - tweet
-      - class
-
-    class mapping:
-      0 = hate speech
-      1 = offensive
-      2 = neither
-
-    Returns:
-      columns: text, label
+    Davidson et al. dataset. class: 0=hate speech, 1=offensive, 2=neither.
+    Returns columns: text, label ('hate', 'offensive', 'neither').
     """
     path = os.path.join(DATA_DIR, "hate_speech_raw.csv")
     df = pd.read_csv(path)
     label_map = {0: "hate", 1: "offensive", 2: "neither"}
-
     df = df.rename(columns={"tweet": "text", "class": "class_id"})
     df["label"] = df["class_id"].map(label_map)
-
-    return df[["text", "label"]].dropna().reset_index(drop=True)
+    return df[["text", "label"]].dropna()
 
 
 def load_sarcasm_df() -> pd.DataFrame:
     """
-    Misra News Headlines dataset (JSON lines).
-
-    Expected fields per JSON line:
-      - headline
-      - is_sarcastic
-
-    Returns:
-      columns: text, label
+    Misra News Headlines dataset (JSON lines). is_sarcastic: 0/1.
+    Returns columns: text, label (0/1).
+    NOTE: kept for reference / comparison only — superseded by
+    load_reddit_sarcasm_df() as the primary sarcasm dataset, since
+    news headlines don't match the conversational register of the
+    hate speech dataset. See README "Known Limitation" section.
     """
     path = os.path.join(DATA_DIR, "sarcasm_raw.json")
     records = []
-
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line:
                 records.append(json.loads(line))
-
     df = pd.DataFrame(records)
     df = df.rename(columns={"headline": "text", "is_sarcastic": "label"})
-
-    return df[["text", "label"]].dropna().reset_index(drop=True)
+    return df[["text", "label"]].dropna()
 
 
 def load_reddit_sarcasm_df(sample_size: int = 100000) -> pd.DataFrame:
     """
-    SARC (Self-Annotated Reddit Corpus), Kaggle CSV version.
+    SARC (Self-Annotated Reddit Corpus), Khodak et al. — conversational,
+    self-labeled sarcasm from Reddit comments. This is the domain-matched
+    replacement for the news-headlines dataset: same register (informal,
+    conversational, sometimes hostile) as the Davidson hate speech tweets.
 
-    File expected:
-      data/train-balanced-sarcasm.csv
+    File: train-balanced-sarcasm.csv, downloaded manually from
+    https://www.kaggle.com/datasets/sherinclaudia/sarcastic-comments-on-reddit
+    (not auto-downloadable — requires a free Kaggle login) and placed at
+    data/train-balanced-sarcasm.csv.
 
-    Important columns in this CSV:
-      - label
-      - comment
-      - author
-      - subreddit
-      - score
-      - ups
-      - downs
-      - date
-      - created_utc
-      - parent_comment
-
-    Returns:
-      columns: text, label
+    sample_size: the full file is ~1M balanced rows (255MB) — for a mini
+    project, training on a random sample keeps train time reasonable
+    without materially hurting a linear model's performance. Pass None
+    to use the full file.
     """
     path = os.path.join(DATA_DIR, "train-balanced-sarcasm.csv")
     if not os.path.exists(path):
         raise FileNotFoundError(
-            f"{path} not found. Download train-balanced-sarcasm.csv from Kaggle "
+            f"{path} not found. Download train-balanced-sarcasm.csv from "
+            "https://www.kaggle.com/datasets/sherinclaudia/sarcastic-comments-on-reddit "
             "and place it in the data/ folder."
         )
 
-    df = pd.read_csv(path, low_memory=False)
+    # comment/parent_comment can contain stray quotes/newlines from Reddit;
+    # on_bad_lines='skip' drops any malformed rows rather than crashing.
+    df = pd.read_csv(path, usecols=["label", "comment"], on_bad_lines="skip")
+    df = df.rename(columns={"comment": "text"})
+    df = df.dropna(subset=["text", "label"])
+    df = df[df["text"].str.strip().str.len() > 0]
 
-    # Normalize column names
-    df.columns = [c.strip().lower() for c in df.columns]
-
-    # Validate required columns
-    required = {"label", "comment"}
-    missing = required - set(df.columns)
-    if missing:
-        raise KeyError(
-            f"Missing required columns: {sorted(missing)}. "
-            f"Available columns: {df.columns.tolist()}"
+    if sample_size is not None and len(df) > sample_size:
+        df = df.groupby("label", group_keys=False).apply(
+            lambda g: g.sample(n=sample_size // 2, random_state=42)
         )
 
-    # Keep only what we need
-    df = df[["label", "comment"]].copy()
+    return df[["text", "label"]].reset_index(drop=True)
 
-    # Clean data
-    df = df.dropna(subset=["label", "comment"])
-    df["comment"] = df["comment"].astype(str).str.strip()
-    df = df[df["comment"].str.len() > 0]
 
-    # Make label numeric and clean invalid values
-    df["label"] = pd.to_numeric(df["label"], errors="coerce")
-    df = df.dropna(subset=["label"])
-    df["label"] = df["label"].astype(int)
+def load_implicit_hate_df() -> pd.DataFrame:
+    """
+    Latent Hatred / Implicit Hate Corpus (ElSherief et al., 2021).
+    File: data/implicit_hate_v1_stg1_posts.tsv (tab-separated).
 
-    # Optional balanced sampling
-    if sample_size is not None and len(df) > sample_size:
-        half = sample_size // 2
+    Columns: post, class (implicit_hate / explicit_hate / not_hate).
 
-        pos = df[df["label"] == 1]
-        neg = df[df["label"] == 0]
+    Mapped to the same 3-class scheme as Davidson for merging:
+      implicit_hate + explicit_hate -> "hate"
+      not_hate                      -> "neither"
 
-        pos_n = min(half, len(pos))
-        neg_n = min(half, len(neg))
+    No "offensive" examples come from this dataset — it only
+    distinguishes hate vs. not-hate, not a third profanity-only class.
+    Merging only adds more "hate" and "neither" examples to Davidson;
+    it doesn't touch the "offensive" class at all.
+    """
+    path = os.path.join(DATA_DIR, "implicit_hate_v1_stg1_posts.tsv")
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f"{path} not found. Download implicit-hate-corpus.zip from "
+            "https://github.com/SALT-NLP/implicit-hate (requires the linked "
+            "survey form) and place implicit_hate_v1_stg1_posts.tsv in data/."
+        )
 
-        pos = pos.sample(n=pos_n, random_state=42)
-        neg = neg.sample(n=neg_n, random_state=42)
+    df = pd.read_csv(path, sep="\t")
+    df = df.rename(columns={"post": "text", "class": "raw_label"})
 
-        df = pd.concat([pos, neg], ignore_index=True)
-        df = df.sample(frac=1, random_state=42).reset_index(drop=True)
-    else:
-        df = df.reset_index(drop=True)
+    label_map = {
+        "implicit_hate": "hate",
+        "explicit_hate": "hate",
+        "not_hate": "neither",
+    }
+    df["label"] = df["raw_label"].map(label_map)
 
-    return df.rename(columns={"comment": "text"})[["text", "label"]]
+    return df[["text", "label"]].dropna().reset_index(drop=True)
+
+
+def load_combined_hate_df() -> pd.DataFrame:
+    """
+    Davidson (Twitter, slur-based hate/offensive/neither) + Implicit
+    Hate Corpus (Twitter, extremist-group implicit/explicit hate vs.
+    not-hate), concatenated into one training set.
+
+    Purpose: Davidson alone only teaches the model to recognize hate
+    speech that contains slurs. This adds ~8.2k more "hate" examples
+    (implicit_hate + explicit_hate) that DON'T rely on slurs, so the
+    combined model should generalize beyond lexical hate markers.
+
+    Returns the same columns as load_hate_speech_df(): text, label.
+    """
+    davidson_df = load_hate_speech_df()
+    implicit_df = load_implicit_hate_df()
+
+    combined = pd.concat([davidson_df, implicit_df], ignore_index=True)
+    combined = combined.drop_duplicates(subset=["text"]).reset_index(drop=True)
+
+    return combined
 
 
 if __name__ == "__main__":
     hate_df = load_hate_speech_df()
     sarcasm_df = load_sarcasm_df()
-
     print("Hate speech dataset:", hate_df.shape)
     print(hate_df["label"].value_counts())
-
     print("\nSarcasm dataset:", sarcasm_df.shape)
     print(sarcasm_df["label"].value_counts())
-
-    # Uncomment this if you want to test Reddit sarcasm loading too
-    # reddit_df = load_reddit_sarcasm_df(sample_size=10000)
-    # print("\nReddit sarcasm dataset:", reddit_df.shape)
-    # print(reddit_df["label"].value_counts())
