@@ -143,6 +143,115 @@ def load_combined_hate_df() -> pd.DataFrame:
     return combined
 
 
+def load_hindi_sarcasm_df() -> pd.DataFrame:
+    """
+    Hindi Tweets Dataset for Sarcasm Detection (Kaggle, via
+    pragyakatyayan). Two separate files, one per class — label comes
+    from which file a row was read from, not a column in the CSV.
+
+    Files expected:
+      data/Sarcasm_Hindi_Tweets-SARCASTIC.csv
+      data/Sarcasm_Hindi_Tweets-NON-SARCASTIC.csv
+
+    Both files share the same tweet-export schema (username, acctdesc,
+    location, ..., text, hashtags) — we only need the 'text' column.
+
+    Returns columns: text, label (1 = sarcastic, 0 = not sarcastic) —
+    same label convention as load_reddit_sarcasm_df(), so the training
+    script logic can be reused as-is for Hindi.
+    """
+    sarcastic_path = os.path.join(DATA_DIR, "Sarcasm_Hindi_Tweets-SARCASTIC.csv")
+    non_sarcastic_path = os.path.join(DATA_DIR, "Sarcasm_Hindi_Tweets-NON-SARCASTIC.csv")
+
+    for p in (sarcastic_path, non_sarcastic_path):
+        if not os.path.exists(p):
+            raise FileNotFoundError(
+                f"{p} not found. Download from "
+                "https://www.kaggle.com/datasets/pragyakatyayan/hindi-tweets-dataset-for-sarcasm-detection "
+                "and place both CSVs in data/."
+            )
+
+    sarc_df = pd.read_csv(sarcastic_path, usecols=["text"], on_bad_lines="skip")
+    sarc_df["label"] = 1
+
+    non_sarc_df = pd.read_csv(non_sarcastic_path, usecols=["text"], on_bad_lines="skip")
+    non_sarc_df["label"] = 0
+
+    combined = pd.concat([sarc_df, non_sarc_df], ignore_index=True)
+    combined = combined.dropna(subset=["text"])
+    combined = combined[combined["text"].str.strip().str.len() > 0]
+
+    return combined[["text", "label"]].reset_index(drop=True)
+
+
+def load_hinglish_sarcasm_df() -> pd.DataFrame:
+    """
+    Human/AI-labeled Hinglish (romanized Hindi) sarcasm dataset.
+    DIFFERENT format from load_hindi_sarcasm_df() — that one is
+    Devanagari script; this one is Latin-script transliterated Hindi
+    ("kya chutiya pah h yee media"), so it needs different preprocessing
+    (see preprocess_hinglish.py, not preprocess_hindi.py).
+
+    Files expected:
+      data/human_labelled_feature.csv  (comment, human_labelled, ai_labelled, ...)
+      data/ai_labelled_feature.csv     (comment, ai_labelled, ...)
+
+    Only human_labelled_feature.csv's `human_labelled` column is used
+    as ground truth. ai_labelled_feature.csv has no human_labelled
+    column in the version this was built against, and ai_labelled
+    disagrees with human_labelled on a meaningful fraction of rows in
+    manual inspection — training on AI-generated labels as if they
+    were ground truth would just teach the model to imitate another
+    model's mistakes. If ai_labelled_feature.csv is found to actually
+    have a human_labelled column, update this function to include it.
+
+    Label values in human_labelled have inconsistent formatting
+    ("non-sarcastic" vs "non_sarcastic" seen in the same column) —
+    normalized here before mapping to 0/1.
+
+    Returns columns: text, label (1 = sarcastic, 0 = not sarcastic).
+    """
+    human_path = os.path.join(DATA_DIR, "human_labelled_features.csv")
+    if not os.path.exists(human_path):
+        raise FileNotFoundError(f"{human_path} not found. Place it in data/.")
+
+    df = pd.read_csv(human_path)
+    df.columns = [c.strip().lower() for c in df.columns]
+
+    if "human_labelled" not in df.columns:
+        raise KeyError(
+            f"Expected 'human_labelled' column, got: {df.columns.tolist()}"
+        )
+
+    df = df.rename(columns={"comment": "text"})
+    df = df.dropna(subset=["text", "human_labelled"])
+
+    # Normalize inconsistent label formatting: lowercase, collapse
+    # hyphen/underscore/space variants to one canonical form.
+    normalized = (
+        df["human_labelled"]
+        .astype(str).str.strip().str.lower()
+        .str.replace("_", "-", regex=False)
+        .str.replace(" ", "-", regex=False)
+    )
+    label_map = {"sarcastic": 1, "non-sarcastic": 0}
+    df["label"] = normalized.map(label_map)
+
+    unmapped = df[df["label"].isna()]
+    if len(unmapped) > 0:
+        unique_bad = unmapped["human_labelled"].unique().tolist()
+        print(
+            f"WARNING: {len(unmapped)} rows had unrecognized label values "
+            f"{unique_bad} and were dropped. Check for further label typos."
+        )
+
+    df = df.dropna(subset=["label"])
+    df["label"] = df["label"].astype(int)
+    df = df[df["text"].str.strip().str.len() > 0]
+
+    return df[["text", "label"]].reset_index(drop=True)
+
+
 if __name__ == "__main__":
     hate_df = load_hate_speech_df()
     sarcasm_df = load_sarcasm_df()
