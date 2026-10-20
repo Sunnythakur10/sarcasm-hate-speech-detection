@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Neural Sarcasm and Hate Speech Detection Studio. A chained dual-engine NLP classifier integrating fine-tuned DistilBERT and Linear SVM models across English and Hinglish.">
+    <title>Sarcasm & Hate Speech Neural Studio — NLP Dual-Engine Classifier</title>
+    
+    <!-- Modern Typography: Outfit & Plus Jakarta Sans & JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- Custom Design System CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <!-- Background Ambient Glow Mesh -->
+    <div class="ambient-glow glow-1"></div>
+    <div class="ambient-glow glow-2"></div>
+    <div class="ambient-glow glow-3"></div>
+
+    <!-- Top Navigation Bar -->
+    <header class="app-header">
+        <div class="header-container">
+            <div class="brand-group">
+                <div class="brand-logo">
+                    <i data-lucide="brain-circuit" class="brand-icon"></i>
+                    <span class="logo-pulse"></span>
+                </div>
+                <div class="brand-info">
+                    <div class="brand-title-wrap">
+                        <span class="brand-title">SARCASM <span class="gradient-text">&</span> HATE SPEECH</span>
+                        <span class="badge-version">v2.4 Neural</span>
+                    </div>
+                    <span class="brand-subtitle">Chained NLP Dual-Engine Classification Architecture</span>
+                </div>
+            </div>
+
+            <div class="header-actions">
+                <div id="deviceStatusBadge" class="status-pill status-ready" title="Model Inference Environment">
+                    <span class="status-dot"></span>
+                    <span id="deviceStatusText">Loading Engine...</span>
+                </div>
+                <button id="btnOpenArchitecture" class="btn btn-secondary btn-sm" aria-label="Open architecture specs modal">
+                    <i data-lucide="layers" class="icon-sm"></i>
+                    <span>Pipeline Architecture</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="main-container">
+        
+        <!-- Hero Tagline -->
+        <section class="hero-intro">
+            <div class="tag-badge">
+                <i data-lucide="sparkles" class="icon-xs"></i>
+                <span>Contextual Toxicity + Nuanced Irony Analysis</span>
+            </div>
+            <h1 class="hero-heading">
+                Disentangling <span class="gradient-text-accent">Sarcasm</span> from <span class="gradient-text-danger">Hostility</span>
+            </h1>
+            <p class="hero-subtext">
+                Standard NLP models often confuse biting sarcasm with toxicity or fail to detect veiled hostility behind witty rhetoric. 
+                This system chains a fine-tuned <strong>DistilBERT</strong> toxicity transformer with <strong>Reddit SARC</strong> &amp; <strong>Hinglish Linear SVMs</strong> to accurately isolate intent.
+            </p>
+        </section>
+
+        <!-- View Switcher Tabs -->
+        <div class="view-tabs-container">
+            <div class="tabs-nav" role="tablist">
+                <button id="tabSingle" class="tab-btn active" role="tab" aria-selected="true">
+                    <i data-lucide="terminal" class="icon-sm"></i>
+                    <span>Interactive Studio</span>
+                </button>
+                <button id="tabBatch" class="tab-btn" role="tab" aria-selected="false">
+                    <i data-lucide="list-checks" class="icon-sm"></i>
+                    <span>Batch Benchmark Suite</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Single Interactive Analysis Section -->
+        <section id="singleView" class="view-panel active">
+            <div class="studio-grid">
+                
+                <!-- Left Input Panel -->
+                <div class="card glass-card input-card">
+                    <div class="card-header">
+                        <div class="card-header-left">
+                            <i data-lucide="edit-3" class="header-icon"></i>
+                            <h2 class="card-title">Input Discourse</h2>
+                        </div>
+                        <div class="input-meta-bar">
+                            <span id="liveScriptIndicator" class="script-badge script-en" title="Detected writing script/language">
+                                <span class="script-dot"></span>
+                                <span id="liveScriptText">EN</span>
+                            </span>
+                            <span id="charCount" class="counter-text">0 chars</span>
+                        </div>
+                    </div>
+
+                    <!-- Input Box Wrapper -->
+                    <div class="textarea-container">
+                        <textarea 
+                            id="inputText" 
+                            class="studio-textarea" 
+                            rows="4" 
+                            placeholder="Type or paste any statement in English or Hinglish (e.g., 'Oh great, another brilliant decision...' or 'kya chutiya pah h yee media')..."
+                            aria-label="Input text for classification"></textarea>
+                        
+                        <div class="textarea-toolbar">
+                            <button id="btnClearText" class="tool-btn" title="Clear text" aria-label="Clear input">
+                                <i data-lucide="trash-2" class="icon-xs"></i>
+                                <span>Clear</span>
+                            </button>
+                            <button id="btnPasteText" class="tool-btn" title="Paste from clipboard" aria-label="Paste text">
+                                <i data-lucide="clipboard" class="icon-xs"></i>
+                                <span>Paste</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Preset Samples Chips -->
+                    <div class="samples-section">
+                        <div class="samples-header">
+                            <span class="samples-label">
+                                <i data-lucide="zap" class="icon-xs"></i>
+                                Quick Test Benchmarks:
+                            </span>
+                        </div>
+                        <div id="sampleChipsContainer" class="sample-chips-wrap">
+                            <!-- Populated dynamically via JS -->
+                        </div>
+                    </div>
+
+                    <!-- Action Trigger -->
+                    <div class="action-footer">
+                        <button id="btnAnalyze" class="btn btn-primary btn-glow" aria-label="Run analysis">
+                            <span class="btn-text-wrap">
+                                <i data-lucide="sparkles" class="btn-icon"></i>
+                                <span class="btn-label">Run Neural Classification</span>
+                            </span>
+                            <span class="kbd-hint">Ctrl + Enter</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Right Output Dashboard Panel -->
+                <div class="card glass-card results-card" id="resultsCard">
+                    
+                    <!-- Empty State View -->
+                    <div id="emptyState" class="empty-state">
+                        <div class="empty-icon-wrap">
+                            <i data-lucide="cpu" class="empty-icon"></i>
+                            <div class="empty-circle-glow"></div>
+                        </div>
+                        <h3 class="empty-title">Awaiting Input Stream</h3>
+                        <p class="empty-desc">
+                            Select one of the sample benchmarks above or enter custom text to see real-time dual-engine classification, probability distributions, and decision routing.
+                        </p>
+                        <div class="empty-features-list">
+                            <div class="feature-item">
+                                <i data-lucide="shield-check" class="feature-icon icon-emerald"></i>
+                                <span>DistilBERT Contextual Hate &amp; Offensive Separation</span>
+                            </div>
+                            <div class="feature-item">
+                                <i data-lucide="smile" class="feature-icon icon-purple"></i>
+                                <span>Reddit SARC &amp; Hinglish Sarcasm Decision Boundaries</span>
+                            </div>
+                            <div class="feature-item">
+                                <i data-lucide="git-merge" class="feature-icon icon-amber"></i>
+                                <span>Multi-script Language Router with Leakage Safeguard</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Active Result View (Hidden initially) -->
+                    <div id="activeResult" class="active-result-layout hidden">
+                        
+                        <!-- Hero Classification Result Banner -->
+                        <div id="verdictBanner" class="verdict-banner">
+                            <div class="verdict-header">
+                                <div class="verdict-tag-wrap">
+                                    <span id="verdictCategory" class="verdict-category">Primary Category</span>
+                                    <span id="verdictLanguage" class="verdict-lang-tag">English</span>
+                                </div>
+                                <span id="verdictSeverity" class="severity-pill">High Risk</span>
+                            </div>
+
+                            <div class="verdict-main">
+                                <div id="verdictIconContainer" class="verdict-icon-box">
+                                    <i id="verdictIcon" data-lucide="alert-triangle"></i>
+                                </div>
+                                <div class="verdict-text-block">
+                                    <h2 id="verdictTitle" class="verdict-title">HATEFUL &amp; SARCASTIC</h2>
+                                    <p id="verdictDescription" class="verdict-description">
+                                        Text exhibits both hostile or hateful intent and sarcastic framing.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <!-- Script or Dataset Note Banner (if applicable) -->
+                            <div id="verdictNoteBox" class="verdict-note-box hidden">
+                                <i data-lucide="info" class="note-icon"></i>
+                                <span id="verdictNoteText"></span>
+                            </div>
+                        </div>
+
+                        <!-- Chained Flow Pipeline Interactive Graphic -->
+                        <div class="pipeline-flow-card">
+                            <div class="flow-header">
+                                <span class="flow-label">
+                                    <i data-lucide="git-branch" class="icon-xs"></i>
+                                    Active Execution Flow:
+                                </span>
+                            </div>
+                            <div class="flow-steps-diagram">
+                                <div class="flow-node active" id="nodeInput">
+                                    <span class="node-num">1</span>
+                                    <span class="node-title">Input</span>
+                                </div>
+                                <div class="flow-connector active"></div>
+                                <div class="flow-node active" id="nodeRouter">
+                                    <span class="node-num">2</span>
+                                    <span class="node-title">Language Router</span>
+                                </div>
+                                <div class="flow-connector active"></div>
+                                <div class="flow-branch-group">
+                                    <div class="flow-node" id="nodeSarcasm">
+                                        <i data-lucide="smile" class="icon-xs"></i>
+                                        <span class="node-title">Sarcasm Engine</span>
+                                    </div>
+                                    <div class="flow-node" id="nodeHate">
+                                        <i data-lucide="shield-alert" class="icon-xs"></i>
+                                        <span class="node-title">DistilBERT Hate</span>
+                                    </div>
+                                </div>
+                                <div class="flow-connector active"></div>
+                                <div class="flow-node active flow-node-final" id="nodeCombiner">
+                                    <i data-lucide="check-circle" class="icon-xs"></i>
+                                    <span class="node-title">Decision Bucket</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Dual Model Detailed Diagnostics -->
+                        <div class="diagnostics-grid">
+                            
+                            <!-- Engine A: Sarcasm Diagnostics -->
+                            <div class="diagnostic-card">
+                                <div class="diag-header">
+                                    <div class="diag-title-wrap">
+                                        <i data-lucide="smile" class="diag-icon icon-purple"></i>
+                                        <div>
+                                            <h4 class="diag-title">Sarcasm Engine</h4>
+                                            <span id="sarcasmModelName" class="diag-model-sub">Reddit SARC LinearSVC</span>
+                                        </div>
+                                    </div>
+                                    <span id="sarcasmStatusBadge" class="badge-sarcasm">Sarcastic</span>
+                                </div>
+
+                                <div class="diag-body">
+                                    <div class="metric-meter-wrap">
+                                        <div class="metric-labels">
+                                            <span>Non-Sarcastic</span>
+                                            <span class="metric-val" id="sarcasmScoreVal">+0.842</span>
+                                            <span>Sarcastic</span>
+                                        </div>
+                                        <div class="meter-track">
+                                            <div class="meter-center-marker" title="Decision Boundary (0.00)"></div>
+                                            <div id="sarcasmMeterFill" class="meter-fill"></div>
+                                            <div id="sarcasmNeedle" class="meter-needle"></div>
+                                        </div>
+                                        <div class="meter-subtext">
+                                            <span>Threshold: <strong>0.00</strong></span>
+                                            <span id="sarcasmDecisionText">Strong Sarcasm Signal</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Engine B: Toxicity & Hate Diagnostics -->
+                            <div class="diagnostic-card">
+                                <div class="diag-header">
+                                    <div class="diag-title-wrap">
+                                        <i data-lucide="shield-alert" class="diag-icon icon-danger"></i>
+                                        <div>
+                                            <h4 class="diag-title">Hate &amp; Offensive Engine</h4>
+                                            <span class="diag-model-sub">DistilBERT Fine-Tuned</span>
+                                        </div>
+                                    </div>
+                                    <span id="hateStatusBadge" class="badge-hate">Hate Speech</span>
+                                </div>
+
+                                <div class="diag-body">
+                                    <div id="hateProbaContainer" class="proba-distribution">
+                                        
+                                        <!-- Hate Class Bar -->
+                                        <div class="proba-row">
+                                            <div class="proba-meta">
+                                                <span class="proba-name text-danger">Hate Speech</span>
+                                                <span id="probaHatePct" class="proba-pct">0%</span>
+                                            </div>
+                                            <div class="bar-track">
+                                                <div id="barHate" class="bar-fill bar-fill-danger" style="width: 0%;"></div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Offensive Class Bar -->
+                                        <div class="proba-row">
+                                            <div class="proba-meta">
+                                                <span class="proba-name text-amber">Offensive / Vulgar</span>
+                                                <span id="probaOffensivePct" class="proba-pct">0%</span>
+                                            </div>
+                                            <div class="bar-track">
+                                                <div id="barOffensive" class="bar-fill bar-fill-amber" style="width: 0%;"></div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Neither Class Bar -->
+                                        <div class="proba-row">
+                                            <div class="proba-meta">
+                                                <span class="proba-name text-emerald">Neither (Benign)</span>
+                                                <span id="probaNeitherPct" class="proba-pct">0%</span>
+                                            </div>
+                                            <div class="bar-track">
+                                                <div id="barNeither" class="bar-fill bar-fill-emerald" style="width: 0%;"></div>
+                                            </div>
+                                        </div>
+
+                                    </div>
+                                    
+                                    <div id="hateUnsupportedBox" class="unsupported-engine-notice hidden">
+                                        <i data-lucide="alert-circle" class="icon-xs"></i>
+                                        <span>Toxicity evaluation is scoped to English in this iteration.</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+
+                        <!-- Linguistic Markers Box (Visible for Hinglish) -->
+                        <div id="markersCard" class="card markers-card hidden">
+                            <div class="markers-header">
+                                <i data-lucide="code" class="icon-xs"></i>
+                                <span class="markers-title">Hinglish Heuristic Tokens Identified:</span>
+                            </div>
+                            <div id="markersList" class="markers-list">
+                                <!-- Populated dynamically -->
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Recent Sessions History Table -->
+            <div class="card glass-card history-card">
+                <div class="card-header">
+                    <div class="card-header-left">
+                        <i data-lucide="history" class="header-icon"></i>
+                        <h3 class="card-title">Session Query History</h3>
+                        <span id="historyCountBadge" class="count-badge">0 entries</span>
+                    </div>
+                    <div class="history-actions">
+                        <button id="btnClearHistory" class="tool-btn" title="Clear analysis history">
+                            <i data-lucide="trash" class="icon-xs"></i>
+                            <span>Clear</span>
+                        </button>
+                        <button id="btnExportHistory" class="tool-btn" title="Export queries as JSON">
+                            <i data-lucide="download" class="icon-xs"></i>
+                            <span>Export</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="history-table" id="historyTable">
+                        <thead>
+                            <tr>
+                                <th style="width: 45%;">Text Analyzed</th>
+                                <th style="width: 15%;">Language</th>
+                                <th style="width: 20%;">Bucket Verdict</th>
+                                <th style="width: 10%;">Sarcastic?</th>
+                                <th style="width: 10%;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="historyTableBody">
+                            <tr class="empty-history-row">
+                                <td colspan="5">No queries analyzed in this session yet. Run a classification above to track results.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- Batch Benchmark Studio Section -->
+        <section id="batchView" class="view-panel">
+            <div class="card glass-card batch-card">
+                <div class="card-header">
+                    <div class="card-header-left">
+                        <i data-lucide="layers" class="header-icon"></i>
+                        <div>
+                            <h2 class="card-title">Batch Multi-Text Evaluation Suite</h2>
+                            <p class="card-subtitle">Analyze up to 25 sentences simultaneously to compare classification behaviors.</p>
+                        </div>
+                    </div>
+                    <div class="batch-header-actions">
+                        <button id="btnLoadBenchmarkSuite" class="btn btn-secondary btn-sm">
+                            <i data-lucide="file-text" class="icon-xs"></i>
+                            <span>Load 8 Benchmark Sentences</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="batch-input-wrap">
+                    <textarea 
+                        id="batchInputText" 
+                        class="studio-textarea batch-textarea" 
+                        rows="6" 
+                        placeholder="Enter one sentence per line (max 25)..."></textarea>
+                    
+                    <div class="batch-footer">
+                        <span id="batchLineCount" class="counter-text">0 sentences</span>
+                        <button id="btnRunBatch" class="btn btn-primary btn-glow">
+                            <i data-lucide="play" class="icon-sm"></i>
+                            <span>Run Batch Classifier</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Batch Results Container -->
+                <div id="batchResultsContainer" class="batch-results-wrap hidden">
+                    <div class="batch-summary-stats">
+                        <div class="stat-pill" id="statTotalCount">Total: 0</div>
+                        <div class="stat-pill stat-hate" id="statHateCount">Hate/Offensive: 0</div>
+                        <div class="stat-pill stat-sarcasm" id="statSarcasmCount">Sarcastic: 0</div>
+                        <div class="stat-pill stat-neutral" id="statNeutralCount">Neutral: 0</div>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="history-table batch-table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 40%;">Text</th>
+                                    <th style="width: 15%;">Language</th>
+                                    <th style="width: 25%;">Bucket Classification</th>
+                                    <th style="width: 20%;">Engine Outputs</th>
+                                </tr>
+                            </thead>
+                            <tbody id="batchTableBody">
+                                <!-- Populated dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Architecture & Model Modal -->
+    <div id="architectureModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <div class="modal-container">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <i data-lucide="cpu" class="modal-icon"></i>
+                    <h2 id="modalTitle" class="modal-title">System Architecture &amp; Methodology</h2>
+                </div>
+                <button id="btnCloseModal" class="modal-close-btn" aria-label="Close modal">
+                    <i data-lucide="x" class="icon-sm"></i>
+                </button>
+            </div>
+
+            <div class="modal-body">
+                <div class="modal-section">
+                    <h3 class="section-title">1. Why Chained Classifiers?</h3>
+                    <p class="section-text">
+                        No single authoritative dataset simultaneously labels text for both <strong>sarcasm</strong> and <strong>hate speech</strong>. 
+                        Attempting to manually label a joint corpus from scratch was prohibitive. Therefore, this project chains two domain-specialized models:
+                        a contextual toxicity classifier and an irony/sarcasm classifier.
+                    </p>
+                </div>
+
+                <div class="modal-section">
+                    <h3 class="section-title">2. Datasets Used Across Iterations</h3>
+                    <div class="dataset-grid">
+                        <div class="dataset-card">
+                            <span class="dataset-name">Hate &amp; Offensive (English)</span>
+                            <span class="dataset-detail"><strong>Davidson et al. (2017)</strong> + <strong>Implicit Hate Corpus</strong></span>
+                            <span class="dataset-model">DistilBERT Contextual Transformer</span>
+                        </div>
+                        <div class="dataset-card">
+                            <span class="dataset-name">English Sarcasm</span>
+                            <span class="dataset-detail"><strong>Reddit SARC (Khodak et al.)</strong> 100k comments</span>
+                            <span class="dataset-model">TF-IDF (1-2 ngrams) + LinearSVC</span>
+                        </div>
+                        <div class="dataset-card">
+                            <span class="dataset-name">Hinglish Sarcasm</span>
+                            <span class="dataset-detail"><strong>Human-Annotated Hinglish Tweets</strong></span>
+                            <span class="dataset-model">Char n-gram (2-4) + LinearSVC</span>
+                        </div>
+                        <div class="dataset-card">
+                            <span class="dataset-name">V7 Combined Research</span>
+                            <span class="dataset-detail"><strong>Davidson + HateXplain</strong> (Cleaned cross-split)</span>
+                            <span class="dataset-model">Latest benchmark ready for fine-tuning</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-section">
+                    <h3 class="section-title">3. Known Limitations &amp; Ethical Safeguards</h3>
+                    <ul class="modal-bullets">
+                        <li>
+                            <strong>Devanagari Label Leakage:</strong> An earlier Devanagari Hindi dataset exhibited severe collection leakage (topic clustering and hashtags baked into text). 
+                            Rather than deploying an unreliable model, Devanagari inputs are explicitly flagged and rejected.
+                        </li>
+                        <li>
+                            <strong>Language Heuristics:</strong> Script routing between English and Hinglish uses lexical marker overlap rather than an oversized language-ID dependency.
+                        </li>
+                        <li>
+                            <strong>Cross-Domain Nuance:</strong> Hate speech is evaluated contextually via transformer subwords, while sarcasm uses dense lexical features.
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button id="btnDismissModal" class="btn btn-primary btn-sm">Got it</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Application Logic Script -->
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script>
+        // Initialize Lucide icons
+        lucide.createIcons();
+    </script>
+</body>
+</html>
