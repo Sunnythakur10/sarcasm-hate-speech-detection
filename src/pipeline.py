@@ -22,22 +22,22 @@ real language-ID library was out of scope for a mini project. This
 is disclosed here and should be disclosed in the report: it's a
 simplification, not a claim of robust language detection.
 
-Hate/offensive/neither is ENGLISH ONLY (models/hate_bert_v2/, BERT
-fine-tuned on Davidson + Implicit Hate Corpus). No Hindi/Hinglish hate
-speech model exists in this project.
+Hate/offensive/neither is ENGLISH ONLY (models/hate_roberta_pretrained/,
+pretrained RoBERTa hate-speech detector). No Hindi/Hinglish hate speech
+model exists in this project.
 """
 import os
 import pickle
 import re
 
 import torch
-from transformers import DistilBertForSequenceClassification, DistilBertTokenizerFast
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 from preprocess import clean_text
 from preprocess_hinglish import clean_hinglish_text
 
 MODEL_DIR = os.path.join(os.path.dirname(__file__), "..", "models")
-HATE_BERT_DIR = os.path.join(MODEL_DIR, "hate_bert_v2")
+HATE_MODEL_DIR = os.path.join(MODEL_DIR, "hate_roberta_pretrained")
 
 # Devanagari Unicode block: U+0900–U+097F
 _DEVANAGARI_RE = re.compile(r"[\u0900-\u097F]")
@@ -90,13 +90,28 @@ class SarcasmHatePipeline:
     def __init__(self):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        # Hate/offensive: English only
-        self.hate_tokenizer = DistilBertTokenizerFast.from_pretrained(HATE_BERT_DIR)
-        self.hate_model = DistilBertForSequenceClassification.from_pretrained(HATE_BERT_DIR)
+        # Pretrained RoBERTa hate/offensive/neither classifier (English only).
+        # Auto* classes support the RoBERTa architecture used by this model.
+        self.hate_tokenizer = AutoTokenizer.from_pretrained(HATE_MODEL_DIR)
+        self.hate_model = AutoModelForSequenceClassification.from_pretrained(HATE_MODEL_DIR)
         self.hate_model.to(self.device)
         self.hate_model.eval()
-        with open(os.path.join(HATE_BERT_DIR, "label_encoder.pkl"), "rb") as f:
-            self.hate_label_encoder = pickle.load(f)
+
+        # Translate the model's label names into the stable labels consumed
+        # by the rest of this pipeline and the existing Flask frontend.
+        self.hate_id2label = self.hate_model.config.id2label
+        self.hate_label_by_id = {
+            int(label_id): self._canonical_hate_label(label_name)
+            for label_id, label_name in self.hate_id2label.items()
+        }
+        expected = {"hate", "offensive", "neither"}
+        found = set(self.hate_label_by_id.values())
+        if found != expected:
+            raise ValueError(
+                "Unexpected labels in the pretrained hate model. "
+                f"Expected {sorted(expected)}, found {sorted(found)}. "
+                f"Model id2label: {self.hate_id2label}"
+            )
 
         # English sarcasm
         with open(os.path.join(MODEL_DIR, "sarcasm_vectorizer.pkl"), "rb") as f:
@@ -110,6 +125,18 @@ class SarcasmHatePipeline:
         with open(os.path.join(MODEL_DIR, "hinglish_sarcasm_classifier.pkl"), "rb") as f:
             self.hinglish_sarcasm_clf = pickle.load(f)
 
+    @staticmethod
+    def _canonical_hate_label(label_name: str) -> str:
+        """Map pretrained-model labels to the app's stable class names."""
+        normalized = str(label_name).strip().lower().replace("-", "_").replace(" ", "_")
+        if normalized in {"hate_speech", "hate", "hateful", "hate_speech_content"}:
+            return "hate"
+        if normalized in {"offensive", "offensive_language", "abusive"}:
+            return "offensive"
+        if normalized in {"neither", "non_hate", "not_hate", "non_hateful", "normal"}:
+            return "neither"
+        raise ValueError(f"Unrecognized label in hate model config: {label_name!r}")
+
     def _predict_hate(self, text: str):
         inputs = self.hate_tokenizer(
             text, return_tensors="pt", truncation=True, padding=True, max_length=128
@@ -118,12 +145,14 @@ class SarcasmHatePipeline:
             logits = self.hate_model(**inputs).logits
             probs = torch.softmax(logits, dim=-1).cpu().numpy()[0]
 
-        pred_id = probs.argmax()
-        label = self.hate_label_encoder.inverse_transform([pred_id])[0]
-        proba = {
-            cls: round(float(probs[i]), 3)
-            for i, cls in enumerate(self.hate_label_encoder.classes_)
-        }
+        pred_id = int(probs.argmax())
+        label = self.hate_label_by_id[pred_id]
+        # Keep a consistent three-class probability dictionary for the API,
+        # regardless of the pretrained model's internal class ordering.
+        proba = {"hate": 0.0, "offensive": 0.0, "neither": 0.0}
+        for class_id, probability in enumerate(probs):
+            canonical_label = self.hate_label_by_id[int(class_id)]
+            proba[canonical_label] = round(float(probability), 3)
         return label, proba
 
     def predict(self, text: str) -> dict:
