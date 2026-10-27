@@ -6,15 +6,11 @@ Sarcasm detection routes by detected language/script:
     Hinglish (romanized
     Hindi, Latin script) -> TF-IDF (char n-grams) + LinearSVC on
                             human-labeled Hinglish tweet data
-    Devanagari script   -> NOT SUPPORTED. The Devanagari Hindi dataset
-                            this project first tried had severe label
-                            leakage (sarcasm-marking hashtags baked
-                            into the text, topic-clustering artifacts)
-                            that made the trained model meaningless —
-                            see project notes. No trustworthy
-                            Devanagari-script model exists in this
-                            project as a result. Devanagari input is
-                            flagged, not silently misrouted.
+    Devanagari script   -> Experimental translation-based sarcasm and
+                            hate/offensive classification: Hindi is
+                            translated to English with MyMemory and then
+                            passed to the existing English classifiers.
+                            This is not a Hindi-trained sarcasm model.
 
 Language routing between English and Hinglish is a hand-built
 heuristic (word-list overlap), NOT a proper language-ID model — a
@@ -22,14 +18,19 @@ real language-ID library was out of scope for a mini project. This
 is disclosed here and should be disclosed in the report: it's a
 simplification, not a claim of robust language detection.
 
-Hate/offensive/neither is ENGLISH ONLY (models/hate_roberta_pretrained/,
-pretrained RoBERTa hate-speech detector). No Hindi/Hinglish hate speech
-model exists in this project.
+The hate/offensive/neither and English sarcasm classifiers are English
+models. For Devanagari Hindi, text is translated through MyMemory and the
+translation is passed to both English classifiers. This is experimental
+translation-based support, not Hindi-trained classification. Romanized
+Hinglish continues to use the dedicated Hinglish sarcasm model; Hinglish
+hate classification is not enabled.
 """
+import html
 import os
 import pickle
 import re
 
+import requests
 import torch
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
@@ -38,6 +39,7 @@ from preprocess_hinglish import clean_hinglish_text
 
 MODEL_DIR = os.path.join(os.path.dirname(__file__), "..", "models")
 HATE_MODEL_DIR = os.path.join(MODEL_DIR, "hate_roberta_pretrained")
+HATE_MODEL_ID = os.environ.get("HATE_MODEL_ID", "AuricErgeson/hate-speech-detector")
 
 # Devanagari Unicode block: U+0900–U+097F
 _DEVANAGARI_RE = re.compile(r"[\u0900-\u097F]")
@@ -86,14 +88,138 @@ def _detect_language(text: str) -> str:
     return "en"
 
 
+def _split_for_translation(text: str, max_bytes: int = 450) -> list[str]:
+    """Split longer text into safe UTF-8-sized MyMemory segments."""
+    text = text.strip()
+    if not text:
+        return []
+    if len(text.encode("utf-8")) <= max_bytes:
+        return [text]
+
+    # Prefer sentence boundaries, then word boundaries. Keep punctuation
+    # attached to its sentence and never cut through a Unicode character.
+    sentences = re.split(r"(?<=[.!?।])\s+|\n+", text)
+    chunks: list[str] = []
+    current = ""
+
+    def flush() -> None:
+        nonlocal current
+        if current:
+            chunks.append(current)
+            current = ""
+
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+
+        if len(sentence.encode("utf-8")) <= max_bytes:
+            candidate = f"{current} {sentence}".strip() if current else sentence
+            if len(candidate.encode("utf-8")) <= max_bytes:
+                current = candidate
+            else:
+                flush()
+                current = sentence
+            continue
+
+        # This sentence alone is too long; split it on whitespace.
+        flush()
+        for word in sentence.split():
+            candidate = f"{current} {word}".strip() if current else word
+            if len(candidate.encode("utf-8")) <= max_bytes:
+                current = candidate
+                continue
+
+            flush()
+            if len(word.encode("utf-8")) <= max_bytes:
+                current = word
+                continue
+
+            # Extremely long single token: split on character boundaries.
+            piece = ""
+            for char in word:
+                if len((piece + char).encode("utf-8")) > max_bytes:
+                    if piece:
+                        chunks.append(piece)
+                    piece = char
+                else:
+                    piece += char
+            current = piece
+
+    flush()
+    return chunks
+
+
+def _translate_hindi_to_english(text: str) -> str:
+    """Translate Devanagari Hindi to English with the MyMemory API.
+
+    MyMemory allows up to 500 UTF-8 bytes per query. Long inputs are
+    split into smaller text segments. The API's free quota can run out;
+    failures raise a clear error instead of classifying untranslated text.
+    """
+    segments = _split_for_translation(text)
+    if not segments:
+        raise ValueError("Hindi text cannot be empty.")
+
+    contact_email = os.environ.get("MYMEMORY_EMAIL", "").strip()
+    translated_segments: list[str] = []
+
+    for segment in segments:
+        params = {
+            "q": segment,
+            "langpair": "hi|en",
+        }
+        # Optional: providing a valid contact email increases the published
+        # daily quota. Do not set this unless the user chooses to provide it.
+        if contact_email:
+            params["de"] = contact_email
+
+        try:
+            response = requests.get(
+                "https://api.mymemory.translated.net/get",
+                params=params,
+                timeout=12,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except requests.RequestException as exc:
+            raise RuntimeError(
+                "Hindi translation is temporarily unavailable. "
+                "Check your internet connection or try again later."
+            ) from exc
+        except ValueError as exc:
+            # Covers a non-JSON response from the remote service.
+            raise RuntimeError(
+                "The translation service returned an unreadable response."
+            ) from exc
+
+        if str(payload.get("responseStatus")) != "200":
+            detail = payload.get("responseDetails") or "Translation request failed."
+            raise RuntimeError(f"Hindi translation failed: {detail}")
+
+        translated = html.unescape(
+            str(payload.get("responseData", {}).get("translatedText", ""))
+        ).strip()
+        if not translated:
+            raise RuntimeError("The translation service returned empty text.")
+        translated_segments.append(translated)
+
+    return " ".join(translated_segments).strip()
+
+
 class SarcasmHatePipeline:
     def __init__(self):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # Pretrained RoBERTa hate/offensive/neither classifier (English only).
         # Auto* classes support the RoBERTa architecture used by this model.
-        self.hate_tokenizer = AutoTokenizer.from_pretrained(HATE_MODEL_DIR)
-        self.hate_model = AutoModelForSequenceClassification.from_pretrained(HATE_MODEL_DIR)
+        # Prefer local files for offline/local development. If the model
+        # folder is absent or incomplete, fetch it from Hugging Face.
+        local_config = os.path.join(HATE_MODEL_DIR, "config.json")
+        hate_model_source = HATE_MODEL_DIR if os.path.isfile(local_config) else HATE_MODEL_ID
+        print(f"[Pipeline] Loading hate model from: {hate_model_source}")
+        self.hate_tokenizer = AutoTokenizer.from_pretrained(hate_model_source)
+        self.hate_model = AutoModelForSequenceClassification.from_pretrained(hate_model_source)
         self.hate_model.to(self.device)
         self.hate_model.eval()
 
@@ -163,21 +289,59 @@ class SarcasmHatePipeline:
         language = _detect_language(text)
 
         if language == "devanagari":
+            # Experimental translation-based Hindi route:
+            # 1) Translate Devanagari Hindi to English.
+            # 2) Run the existing English sarcasm and hate classifiers on the
+            #    translated text. This does NOT make either classifier Hindi-trained.
+            # Translation can lose sarcasm, idioms, slang, or social context.
+            translated_text = _translate_hindi_to_english(text)
+
+            # Sarcasm: existing English TF-IDF + LinearSVC model applied to
+            # the translated English sentence. LinearSVC score is not a probability.
+            cleaned_translation = clean_text(translated_text)
+            sarcasm_vec = self.en_sarcasm_vectorizer.transform([cleaned_translation])
+            sarcasm_score = float(
+                self.en_sarcasm_clf.decision_function(sarcasm_vec)[0]
+            )
+            is_sarcastic = sarcasm_score >= 0
+
+            # Hate/offensive: existing English three-class classifier on the
+            # same translation.
+            hate_label, hate_proba = self._predict_hate(translated_text)
+            is_hate = hate_label == "hate"
+            is_offensive = hate_label == "offensive"
+
+            if is_hate and is_sarcastic:
+                bucket = "hate_sarcastic"
+            elif is_hate:
+                bucket = "hate"
+            elif is_offensive and is_sarcastic:
+                bucket = "offensive_sarcastic"
+            elif is_offensive:
+                bucket = "offensive"
+            elif is_sarcastic:
+                bucket = "sarcastic"
+            else:
+                bucket = "neutral"
+
             return {
                 "text": text,
                 "language": language,
-                "bucket": "unsupported",
-                "hate_label": None,
-                "hate_class_probabilities": None,
-                "is_hate": None,
-                "is_offensive": None,
-                "is_sarcastic": None,
-                "sarcasm_confidence_score": None,
+                "bucket": bucket,
+                "hate_label": hate_label,
+                "hate_class_probabilities": hate_proba,
+                "is_hate": is_hate,
+                "is_offensive": is_offensive,
+                "is_sarcastic": is_sarcastic,
+                "sarcasm_confidence_score": round(sarcasm_score, 3),
+                "translated_text": translated_text,
                 "note": (
-                    "Devanagari-script input detected. No trustworthy "
-                    "sarcasm model exists for this script in this "
-                    "project — see README Known Limitations. Try "
-                    "romanized (Hinglish) input instead."
+                    "Experimental Hindi analysis: the original Hindi was "
+                    "translated into English, then the existing English sarcasm "
+                    "and hate/offensive classifiers were applied to that translation. "
+                    f"English translation: {translated_text} "
+                    "Translation may lose sarcasm, idioms, slang, or context, so "
+                    "these predictions are not equivalent to a Hindi-trained model."
                 ),
             }
 

@@ -357,13 +357,14 @@ if "last_input" not in st.session_state:
     st.session_state.last_input = ""
 
 SAMPLES = {
-    "English sarcasm": "I work 40 hours a week for me to be this poor.",
+    "English sarcasm": "Oh great, another genius decision from you.",
     "Normal English": "I enjoyed watching the movie yesterday.",
     "Hate speech": (
         "People from that ethnic group are inferior "
         "and should not have equal rights."
     ),
     "Hinglish": "Bhai kya mast joke maara hai.",
+    "Hindi (experimental)": "वाह, तुमने तो कमाल ही कर दिया!",
 }
 
 
@@ -400,12 +401,13 @@ st.markdown(
     </div>
     <div class="hero-description">
         Analyze text for sarcasm, hate speech, and offensive language
-        through a unified classification pipeline. Supports English
-        sarcasm and romanized Hindi (Hinglish) sarcasm.
+        through a unified classification pipeline. Supports English and
+        romanized Hinglish sarcasm, plus experimental Hindi analysis via translation.
     </div>
     <div class="feature-row">
         <div class="feature-pill">English sarcasm</div>
         <div class="feature-pill">Hinglish sarcasm</div>
+        <div class="feature-pill">Experimental Hindi translation</div>
         <div class="feature-pill">Hate classification</div>
         <div class="feature-pill">Offensive language detection</div>
     </div>
@@ -527,8 +529,8 @@ with right:
             </div>
             <div style="color:#edf3ff;font-size:13px;line-height:1.9;">
                 English: sarcasm and hate/offensive classification<br>
-                Hinglish: sarcasm classification<br>
-                Devanagari Hindi: currently unsupported
+                Hinglish (Roman script): sarcasm classification<br>
+                Devanagari Hindi: experimental translation-based sarcasm and hate/offensive classification
             </div>
         </div>
         """,
@@ -562,7 +564,7 @@ if result:
         "offensive": "The hate classifier selected the offensive category for this text.",
         "sarcastic": "The sarcasm classifier detected sarcastic language.",
         "neutral": "The combined pipeline did not select a hate or offensive label, and the sarcasm classifier did not flag sarcasm.",
-        "unsupported": "This writing script is not currently supported by the project's sarcasm classifier.",
+        "unsupported": "This writing script is not currently supported by the project's classifiers.",
     }
     result_titles = {
         "hate_sarcastic": "Hate + Sarcasm",
